@@ -25,16 +25,17 @@ db_id_idx         = 5
 ###########
 # Globals #
 ###########
-song_start_point     = random.randrange(30000, 50000)
-deviceID             = 0
-popularity_cutoff    = 60
-ranking              = 50
-num_rounds           = 5
-start_playing_offset = 5
-song_play_length     = 10
-min_year             = 1960
-max_year             = 2023
-engine               = pyttsx3.init()
+played_songs_file_name = "played_songs.txt"
+MAX_PLAYED_SONGS       = 50
+played_songs           = []
+deviceID               = 0
+popularity_cutoff      = 60
+num_rounds             = 15
+start_playing_offset   = 5
+song_play_length       = 10
+min_year               = 1960
+max_year               = 2023
+engine                 = pyttsx3.init()
 engine.setProperty('rate', 170)
 
 #########################################
@@ -52,35 +53,6 @@ def create_connection(path):
     return connection
 
 conn = create_connection("music.db")
-
-#########################################
-# function: update_song()               #
-#                                       #
-# Asks the user if they would like to   #
-# update the song information in the    #
-# database.                             #
-#########################################
-def update_song(song):
-    new_title = input("Title (" + song[db_title_idx] + "): ")
-    if (new_title == ""):
-        new_title = song[db_title_idx]
-
-    new_artist = input("Artist (" + song[db_artist_idx] + "): ")
-    if (new_artist == ""):
-        new_artist = song[db_artist_idx]
-
-    new_album = input("Album (" + song[db_album_idx] + "): ")
-    if (new_album == ""):
-        new_album = song[db_album_idx]
-
-    new_year = input("Year (" + str(song[db_year_idx]) + "): ")
-    if (new_year == ""):
-        new_year = song[db_year_idx]
-
-    cur = conn.cursor()
-    cur.execute("UPDATE General SET title = ? , artist = ? , album = ? , year = ? WHERE id = ?", (new_title, new_artist, new_album, new_year, song[db_id_idx],))
-    conn.commit()
-    print("Update complete.")
 
 #########################################
 # function: get_random_song_from_year() #
@@ -140,11 +112,36 @@ def display_song_info(song_to_play, show_year):
     engine.say("That song was " + song_to_play[db_title_idx] + " by " + song_to_play[db_artist_idx])
     engine.runAndWait();
 
-    edit = input("Edit (y/n)?: ")
-    if edit == 'y':
-        update_song(song_to_play)
-
     print()
+
+#########################################
+# function: write_played_songs_file()   #
+#                                       #
+# Writes the list of played songs to    #
+# the file.                             #
+#########################################
+def write_played_songs_file():
+    f = open (played_songs_file_name, "a")
+    for id in played_songs:
+        f.write(id)
+        f.write("\n")
+    f.close()
+
+#########################################
+# function: read_played_songs_file()    #
+#                                       #
+# Reads in the list of played songs.    #
+#########################################
+def read_played_songs_file():
+    if os.path.isfile(played_songs_file_name):
+        with open(played_songs_file_name) as fp:
+            line = fp.readline().strip()
+            while line:
+                played_songs.append(line)
+                line = fp.readline().strip()
+    else:
+        with open(played_songs_file_name, "w+"):
+            pass
 
 #########################################
 # function: main_menu()                 #
@@ -168,6 +165,7 @@ def main_menu(spotify_object):
         if (game_selection == "2"):
             guess_songs_in_range(spotify_object)
         elif (game_selection == "9"):
+            write_played_songs_file()
             print("See ya.")
         else:
             print("Not supported.")
@@ -225,7 +223,8 @@ def play_song(song_id, song_start_point, song_play_length):
 #########################################
 def guess_year_from_songs(spotify_object):
     round_count = 0
-    played_songs = []
+    played_artists = []
+    played_albums = []
 
     input_min_year = int(input("Min Year? "))
     while (input_min_year < min_year):
@@ -244,13 +243,26 @@ def guess_year_from_songs(spotify_object):
     while round_count < num_rounds:
         announce_song_number(round_count, num_rounds)
 
+        song_start_point     = random.randrange(30000, 90000)
         song_to_play = get_random_song_from_year(rand_year)
+
+        while (song_to_play[db_id_idx] in played_songs or
+               song_to_play[db_artist_idx] in played_artists or
+               song_to_play[db_album_idx] in played_albums):
+            song_to_play = get_random_song_from_year(rand_year)
 
         play_song(song_to_play, song_start_point, song_play_length)
 
         display_song_info(song_to_play, False)
 
         round_count += 1
+
+        if (len(played_songs) == MAX_PLAYED_SONGS):
+            played_songs.pop(0)
+
+        played_songs.append(song_to_play[db_id_idx])
+        played_artists.append(song_to_play[db_artist_idx])
+        played_albums.append(song_to_play[db_album_idx])
 
     announce_year_answer(rand_year)
 
@@ -262,7 +274,6 @@ def guess_year_from_songs(spotify_object):
 #########################################
 def guess_songs_in_range(spotify_object):
     round_count = 0
-    played_songs = []
 
     input_min_year = int(input("Min Year? "))
     while (input_min_year < min_year):
@@ -282,7 +293,11 @@ def guess_songs_in_range(spotify_object):
 
         announce_song_number(round_count, num_rounds)
 
+        song_start_point     = random.randrange(30000, 90000)
         song_to_play = get_random_song_from_year(rand_year)
+
+        while (song_to_play[db_id_idx] in played_songs):
+            song_to_play = get_random_song_from_year(rand_year)
 
         play_song(song_to_play, song_start_point, song_play_length)
 
@@ -290,9 +305,15 @@ def guess_songs_in_range(spotify_object):
 
         round_count += 1
 
+        if (len(played_songs) == MAX_PLAYED_SONGS):
+            played_songs.pop(0)
+
+        played_songs.append(song_to_play[db_id_idx])
+
 ########
 # MAIN #
 ########
+read_played_songs_file()
 spotify_object = login_to_spotify()
 device_id = get_device_id(spotify_object)
 main_menu(spotify_object)
